@@ -34,7 +34,7 @@ namespace Jackett.Common.Indexers.Definitions
         public override string Name => "Wolfmax 4k";
         public override string Description => "Wolfmax 4k is a SPANISH Public site for MOVIES / TV";
 
-        public override string SiteLink { get; protected set; } = "https://wolfmax4k.com/";
+        public override string SiteLink { get; protected set; } = "https://wolftorrent.com/";
 
         public override string Language => "es-ES";
         public override string Type => "public";
@@ -66,7 +66,9 @@ namespace Jackett.Common.Indexers.Definitions
         {
             configData.AddDynamic("flaresolverr", new DisplayInfoConfigurationItem("FlareSolverr", "This site may use Cloudflare DDoS Protection, therefore Jackett requires <a href=\"https://github.com/Jackett/Jackett#configuring-flaresolverr\" target=\"_blank\">FlareSolverr</a> to access it."));
             webclient.requestDelay = 0.5;
-            webclient.EmulateBrowser = false;
+            // the site's /buscar search endpoint silently returns an empty result page
+            // when it sees the default "Jackett/x.x.x" User-Agent; it needs a browser-like one
+            webclient.EmulateBrowser = true;
         }
 
         private static TorznabCapabilities SetCapabilities()
