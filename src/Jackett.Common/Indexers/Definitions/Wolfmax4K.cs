@@ -36,6 +36,11 @@ namespace Jackett.Common.Indexers.Definitions
 
         public override string SiteLink { get; protected set; } = "https://wolftorrent.com/";
 
+        public override string[] LegacySiteLinks => new[]
+        {
+            "https://wolfmax4k.com/",
+        };
+
         public override string Language => "es-ES";
         public override string Type => "public";
 
