@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -232,17 +233,29 @@ namespace Jackett.Common.Indexers.Definitions
         public override async Task<byte[]> Download(Uri link)
         {
             var parameters = HttpUtility.ParseQueryString(link.Query);
+            var tabla = parameters["tabla"];
+            var code = parameters["code"];
 
-            var generate = await DownloadApiRequestAsync(new
-            {
-                action = "generate",
-                code = parameters["code"],
-                tabla = parameters["tabla"]
-            });
-            var challenge = generate.Value<string>("challenge");
+            var generate = await DownloadApiRequestAsync(new { action = "generate", code, tabla });
+
             var pow = generate["pow"];
-            if (pow?.Value<int>("version") != 2)
-                throw new Exception($"Error, the proof of work version {pow?.Value<string>("version")} of the site is not supported.");
+            if (pow != null)
+                return await DownloadViaProofOfWorkAsync(generate, pow);
+
+            var verification = generate["verification"];
+            if (verification != null && verification.Value<string>("provider") == "turnstile")
+                return await DownloadViaTurnstileAsync(tabla, code);
+
+            throw new Exception("Error, the site's download verification method is not recognized.");
+        }
+
+        // the site's original anti-bot measure: a client-side proof of work (several rounds of
+        // SHA256 hashing) that Jackett computes and submits itself, no browser needed
+        private async Task<byte[]> DownloadViaProofOfWorkAsync(JToken generate, JToken pow)
+        {
+            var challenge = generate.Value<string>("challenge");
+            if (pow.Value<int>("version") != 2)
+                throw new Exception($"Error, the proof of work version {pow.Value<string>("version")} of the site is not supported.");
 
             var nonces = ComputeProofOfWork(challenge, pow.Value<int>("rounds"), pow.Value<int>("difficulty"));
 
@@ -273,9 +286,77 @@ namespace Jackett.Common.Indexers.Definitions
                 return torrent.ContentBytes;
             }
 
-            // external links go through the link protector, eg: https://enlacito.com/s.php?i=xxx
-            var enlacitoUrl = torrentUrl.AbsoluteUri;
-            var enlacitoPage = await RequestWithCookiesAndRetryAsync(enlacitoUrl, referer: SiteLink);
+            return await DownloadFromEnlacitoAsync(torrentUrl.AbsoluteUri, null);
+        }
+
+        // the site's current anti-bot measure: a Cloudflare Turnstile widget embedded in the
+        // download gateway page. Jackett can't solve that itself (it has no browser), so it
+        // delegates the whole gateway page load to FlareSolverr, which must have Turnstile
+        // click support (eg. https://github.com/FlareSolverr/FlareSolverr/pull/1735 and
+        // related PRs) - the stock FlareSolverr/ClearanceHandler integration doesn't apply
+        // here because it only triggers on Cloudflare's own challenge pages, not this site's
+        // own 200 OK JSON "verification" response.
+        private async Task<byte[]> DownloadViaTurnstileAsync(string tabla, string code)
+        {
+            var flareSolverrUrl = webclient.FlareSolverrUrl;
+            if (flareSolverrUrl.IsNullOrWhiteSpace())
+                throw new Exception("Error, this site now requires solving a Cloudflare Turnstile challenge to " +
+                                     "download. Configure FlareSolverr (with Turnstile click support) in Jackett's server settings.");
+
+            var gatewaySegment = tabla switch
+            {
+                "peliculas" => "pelicula",
+                "series" => "serie",
+                _ => tabla
+            };
+            var gatewayUrl = new Uri(new Uri(SiteLink), $"descarga/{gatewaySegment}/{code}").AbsoluteUri;
+
+            var apiUrl = flareSolverrUrl.TrimEnd('/');
+            if (!apiUrl.EndsWith("/v1"))
+                apiUrl += "/v1";
+
+            var requestBody = JsonConvert.SerializeObject(new
+            {
+                cmd = "request.get",
+                url = gatewayUrl,
+                turnstile = "click",
+                waitInSeconds = 5,
+                maxTimeout = webclient.FlareSolverrMaxTimeout
+            });
+
+            JObject response;
+            using (var httpClient = new HttpClient())
+            using (var content = new StringContent(requestBody, Encoding.UTF8, "application/json"))
+            {
+                var httpResponse = await httpClient.PostAsync(apiUrl, content);
+                response = JObject.Parse(await httpResponse.Content.ReadAsStringAsync());
+            }
+
+            if (response.Value<string>("status") != "ok")
+                throw new Exception($"Error, FlareSolverr could not solve the site's Turnstile challenge: {response.Value<string>("message")}");
+
+            var solution = response["solution"];
+            var finalUrl = solution?.Value<string>("url");
+            if (finalUrl.IsNullOrWhiteSpace())
+                throw new Exception("Error, FlareSolverr did not return a resulting URL after solving the Turnstile challenge.");
+
+            var cookieHeader = string.Join("; ", (solution["cookies"] as JArray ?? new JArray())
+                                                  .Select(c => $"{c.Value<string>("name")}={c.Value<string>("value")}"));
+            if (cookieHeader.IsNullOrWhiteSpace())
+                cookieHeader = null;
+
+            if (finalUrl.Contains("enlacito.com"))
+                return await DownloadFromEnlacitoAsync(finalUrl, cookieHeader);
+
+            // the gateway redirected straight to the torrent file
+            var result = await RequestWithCookiesAndRetryAsync(finalUrl, cookieOverride: cookieHeader, referer: SiteLink);
+            return result.ContentBytes;
+        }
+
+        // external links go through the link protector, eg: https://enlacito.com/s.php?i=xxx
+        private async Task<byte[]> DownloadFromEnlacitoAsync(string enlacitoUrl, string cookieHeader)
+        {
+            var enlacitoPage = await RequestWithCookiesAndRetryAsync(enlacitoUrl, cookieOverride: cookieHeader, referer: SiteLink);
 
             var enlacitoHtmlParser = new HtmlParser();
             var enlacitoDoc = await enlacitoHtmlParser.ParseDocumentAsync(enlacitoPage.ContentString);
