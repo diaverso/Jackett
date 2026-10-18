@@ -173,7 +173,7 @@ Prior versions of Jackett are no longer supported.
  * VSTHouse
  * VST Torrentz
  * VSTorrent
- * Wolfmax4K
+ * WolfTorrent
  * World-torrent
  * XXXClub
  * xxxtor

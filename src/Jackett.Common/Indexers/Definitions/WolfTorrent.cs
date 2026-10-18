@@ -29,11 +29,12 @@ using WebClient = Jackett.Common.Utils.Clients.WebClient;
 namespace Jackett.Common.Indexers.Definitions
 {
     [ExcludeFromCodeCoverage]
-    public class Wolfmax4K : IndexerBase
+    public class WolfTorrent : IndexerBase
     {
-        public override string Id => "wolfmax4k";
-        public override string Name => "Wolfmax 4k";
-        public override string Description => "Wolfmax 4k is a SPANISH Public site for MOVIES / TV";
+        public override string Id => "wolftorrent";
+        public override string[] Replaces => new[] { "wolfmax4k" };
+        public override string Name => "WolfTorrent";
+        public override string Description => "WolfTorrent (formerly Wolfmax 4k) is a SPANISH Public site for MOVIES / TV";
 
         public override string SiteLink { get; protected set; } = "https://wolftorrent.com/";
 
@@ -51,17 +52,17 @@ namespace Jackett.Common.Indexers.Definitions
 
         private static Dictionary<string, long> EstimatedSizeByCategory => new Dictionary<string, long>
         {
-            { Wolfmax4KCatType.Pelicula, 2.Gigabytes() },
-            { Wolfmax4KCatType.Pelicula720, 5.Gigabytes() },
-            { Wolfmax4KCatType.Pelicula1080, 15.Gigabytes() },
-            { Wolfmax4KCatType.Pelicula4K, 30.Gigabytes() },
-            { Wolfmax4KCatType.Serie, 512.Megabytes() },
-            { Wolfmax4KCatType.Serie720, 1.Gigabytes() },
-            { Wolfmax4KCatType.Serie1080, 3.Gigabytes() },
-            { Wolfmax4KCatType.Serie4K, 8.Gigabytes() }
+            { WolfTorrentCatType.Pelicula, 2.Gigabytes() },
+            { WolfTorrentCatType.Pelicula720, 5.Gigabytes() },
+            { WolfTorrentCatType.Pelicula1080, 15.Gigabytes() },
+            { WolfTorrentCatType.Pelicula4K, 30.Gigabytes() },
+            { WolfTorrentCatType.Serie, 512.Megabytes() },
+            { WolfTorrentCatType.Serie720, 1.Gigabytes() },
+            { WolfTorrentCatType.Serie1080, 3.Gigabytes() },
+            { WolfTorrentCatType.Serie4K, 8.Gigabytes() }
         };
 
-        public Wolfmax4K(IIndexerConfigurationService configService, WebClient w, Logger l, IProtectionService ps,
+        public WolfTorrent(IIndexerConfigurationService configService, WebClient w, Logger l, IProtectionService ps,
                          ICacheService cs)
             : base(configService: configService,
                    client: w,
@@ -90,15 +91,15 @@ namespace Jackett.Common.Indexers.Definitions
                     MovieSearchParam.Q
                 }
             };
-            caps.Categories.AddCategoryMapping(Wolfmax4KCatType.Pelicula, TorznabCatType.MoviesSD, "Peliculas");
-            caps.Categories.AddCategoryMapping(Wolfmax4KCatType.Pelicula720, TorznabCatType.Movies, "Peliculas 720p");
-            caps.Categories.AddCategoryMapping(Wolfmax4KCatType.Pelicula1080, TorznabCatType.MoviesHD, "Peliculas 1080p");
-            caps.Categories.AddCategoryMapping(Wolfmax4KCatType.Pelicula4K, TorznabCatType.MoviesUHD, "Peliculas 4k");
+            caps.Categories.AddCategoryMapping(WolfTorrentCatType.Pelicula, TorznabCatType.MoviesSD, "Peliculas");
+            caps.Categories.AddCategoryMapping(WolfTorrentCatType.Pelicula720, TorznabCatType.Movies, "Peliculas 720p");
+            caps.Categories.AddCategoryMapping(WolfTorrentCatType.Pelicula1080, TorznabCatType.MoviesHD, "Peliculas 1080p");
+            caps.Categories.AddCategoryMapping(WolfTorrentCatType.Pelicula4K, TorznabCatType.MoviesUHD, "Peliculas 4k");
 
-            caps.Categories.AddCategoryMapping(Wolfmax4KCatType.Serie, TorznabCatType.TVSD, "Series");
-            caps.Categories.AddCategoryMapping(Wolfmax4KCatType.Serie720, TorznabCatType.TV, "Series 720p");
-            caps.Categories.AddCategoryMapping(Wolfmax4KCatType.Serie1080, TorznabCatType.TVHD, "Series 1080p");
-            caps.Categories.AddCategoryMapping(Wolfmax4KCatType.Serie4K, TorznabCatType.TVUHD, "Series 4k");
+            caps.Categories.AddCategoryMapping(WolfTorrentCatType.Serie, TorznabCatType.TVSD, "Series");
+            caps.Categories.AddCategoryMapping(WolfTorrentCatType.Serie720, TorznabCatType.TV, "Series 720p");
+            caps.Categories.AddCategoryMapping(WolfTorrentCatType.Serie1080, TorznabCatType.TVHD, "Series 1080p");
+            caps.Categories.AddCategoryMapping(WolfTorrentCatType.Serie4K, TorznabCatType.TVUHD, "Series 4k");
 
             return caps;
         }
@@ -133,7 +134,7 @@ namespace Jackett.Common.Indexers.Definitions
                 var parser = new HtmlParser();
                 using var dom = parser.ParseDocument(result.ContentString);
 
-                var items = new List<Wolfmax4KItem>();
+                var items = new List<WolfTorrentItem>();
                 foreach (var card in dom.QuerySelectorAll("article.wolf-card"))
                     items.AddRange(await ParseCardAsync(card, NeedsAllEpisodes(card, query)));
 
@@ -160,13 +161,13 @@ namespace Jackett.Common.Indexers.Definitions
             return !query.Season.HasValue || !cardSeason.Success || int.Parse(cardSeason.Groups[1].Value) == query.Season;
         }
 
-        private async Task<IEnumerable<Wolfmax4KItem>> ParseCardAsync(IElement card, bool fetchAllEpisodes)
+        private async Task<IEnumerable<WolfTorrentItem>> ParseCardAsync(IElement card, bool fetchAllEpisodes)
         {
             // <a class="wolf-card-main" href="/serie/86a2xh">Preacher - 1ª Temporada</a>
             var mainLink = card.QuerySelector("a.wolf-card-main");
             var detailsPath = mainLink?.GetAttribute("href");
             if (detailsPath.IsNullOrWhiteSpace())
-                return Enumerable.Empty<Wolfmax4KItem>();
+                return Enumerable.Empty<WolfTorrentItem>();
 
             var title = mainLink.TextContent.Trim().TrimEnd('.');
             var imagePath = card.QuerySelector(".wolf-card-poster img")?.GetAttribute("data-original");
@@ -187,7 +188,7 @@ namespace Jackett.Common.Indexers.Definitions
             {
                 var format = file.QuerySelector(".wolf-card-format");
                 var button = file.QuerySelector("button.protected-download");
-                return new Wolfmax4KItem
+                return new WolfTorrentItem
                 {
                     Title = title,
                     DetailsPath = format?.GetAttribute("href") ?? detailsPath,
@@ -278,7 +279,7 @@ namespace Jackett.Common.Indexers.Definitions
             if (validate.Value<string>("status") == "pow_pending")
                 throw new Exception("Error, the site did not accept the proof of work, try again later.");
 
-            // download_url is protocol relative, eg: //wolfmax4k.com/torrents/peliculas/xxx.torrent
+            // download_url is protocol relative, eg: //wolftorrent.com/torrents/peliculas/xxx.torrent
             var torrentUrl = new Uri(new Uri(SiteLink), validate.Value<string>("download_url"));
             if (!validate.Value<bool>("external"))
             {
@@ -346,7 +347,21 @@ namespace Jackett.Common.Indexers.Definitions
                 cookieHeader = null;
 
             if (finalUrl.Contains("enlacito.com"))
+            {
+                // the browser already went through enlacito's form, so the page FlareSolverr
+                // returns carries the encrypted link itself (the "once a day" gate shown on top
+                // of it is cosmetic) - no need to repeat the form requests ourselves
+                var linkOut = Regex.Match(solution.Value<string>("response") ?? "", "var link_out = \"(.*?)\"");
+                if (linkOut.Success)
+                {
+                    var slink = Encoding.UTF8.GetString(Convert.FromBase64String(linkOut.Groups[1].Value));
+                    var torrentUrl = await OpenSSLDecryptAsync(slink, TorrentLinkEncryptionKey);
+                    var torrent = await RequestWithCookiesAndRetryAsync(torrentUrl, cookieOverride: cookieHeader, referer: SiteLink);
+                    return torrent.ContentBytes;
+                }
+
                 return await DownloadFromEnlacitoAsync(finalUrl, cookieHeader);
+            }
 
             // the gateway redirected straight to the torrent file
             var result = await RequestWithCookiesAndRetryAsync(finalUrl, cookieOverride: cookieHeader, referer: SiteLink);
@@ -360,7 +375,19 @@ namespace Jackett.Common.Indexers.Definitions
 
             var enlacitoHtmlParser = new HtmlParser();
             var enlacitoDoc = await enlacitoHtmlParser.ParseDocumentAsync(enlacitoPage.ContentString);
-            var enlacitoFormUrl = enlacitoDoc.QuerySelector("form").GetAttribute("action");
+            var enlacitoForm = enlacitoDoc.QuerySelector("form");
+            if (enlacitoForm == null)
+            {
+                // enlacito.com only shows the real link behind a once-per-24h ad-gate page
+                // (remembered via its own cookie, which RequestWithCookiesAsync already
+                // persists into this indexer's CookieHeader once obtained). A browser
+                // session that has never completed that gate (eg. a fresh FlareSolverr
+                // profile) lands on the gate page instead of the form.
+                throw new Exception("Error, enlacito.com is asking to complete its once-a-day ad gate before " +
+                                     "giving the real link. Open the download in a real browser once " +
+                                     "(the site remembers it for 24h), then try the automatic download again.");
+            }
+            var enlacitoFormUrl = enlacitoForm.GetAttribute("action");
             var enlacitoFormLinkser = enlacitoDoc.QuerySelector("input[name=\"linkser\"]").GetAttribute("value");
             var enlacitoFormFlow = enlacitoDoc.QuerySelector("input[name=\"flow\"]").GetAttribute("value");
 
@@ -543,11 +570,11 @@ namespace Jackett.Common.Indexers.Definitions
             return query;
         }
 
-        private ReleaseInfo ExtractReleaseInfo(Wolfmax4KItem item, TorznabQuery query)
+        private ReleaseInfo ExtractReleaseInfo(WolfTorrentItem item, TorznabQuery query)
         {
-            // https://wolfmax4k.com/pelicula/5dw2j7
-            // https://wolfmax4k.com/serie/episodio/8fmmgy
-            // https://wolfmax4k.com/documental/episodio/48jcn5
+            // https://wolftorrent.com/pelicula/5dw2j7
+            // https://wolftorrent.com/serie/episodio/8fmmgy
+            // https://wolftorrent.com/documental/episodio/48jcn5
 
             var torrentName = item.Title;
             var guid = item.DetailsPath;
@@ -559,7 +586,7 @@ namespace Jackett.Common.Indexers.Definitions
             {
                 // Some torrents has no quality.
                 // Ignored it because they are torrents that are not well categorized
-                // as this game https://wolfmax4k.com/juego/james-cameronavatar/
+                // as this game https://wolftorrent.com/juego/james-cameronavatar/
                 return null;
             }
 
@@ -569,7 +596,7 @@ namespace Jackett.Common.Indexers.Definitions
             var link = new Uri(new Uri(SiteLink), $"api/descargas?tabla={item.Tabla}&code={item.ContentCode}");
             var title = ParseTitle(torrentName, item.EpisodeText, quality);
             var episodes = GetEpisodesFromTitle(title);
-            var wolfmaxCategory = ParseCategory(torrentName, guid, quality);
+            var siteCategory = ParseCategory(torrentName, guid, quality);
 
             var releaseInfo = new ReleaseInfo
             {
@@ -577,11 +604,11 @@ namespace Jackett.Common.Indexers.Definitions
                 Link = link,
                 Details = details,
                 Guid = link,
-                Category = MapTrackerCatToNewznab(wolfmaxCategory),
+                Category = MapTrackerCatToNewznab(siteCategory),
                 PublishDate = item.PublishDate ?? DateTime.Now,
                 Size = item.Size.IsNotNullOrWhiteSpace()
                     ? ParseUtil.GetBytes(item.Size)
-                    : EstimatedSizeByCategory[wolfmaxCategory] * Math.Max(episodes.Count, 1),
+                    : EstimatedSizeByCategory[siteCategory] * Math.Max(episodes.Count, 1),
                 Seeders = 1,
                 Peers = 2,
                 DownloadVolumeFactor = 0,
@@ -644,47 +671,47 @@ namespace Jackett.Common.Indexers.Definitions
             var isTvShow = guid.Contains("/serie") || guid.Contains("/episodio/") ||
                            Regex.IsMatch(torrentName, @"Cap\.(\s+)?(\d+)", RegexOptions.IgnoreCase);
 
-            string wolfmaxCat;
+            string siteCat;
             if (isTvShow)
             {
                 if (quality.Contains("720"))
                 {
-                    wolfmaxCat = Wolfmax4KCatType.Serie720;
+                    siteCat = WolfTorrentCatType.Serie720;
                 }
                 else if (quality.Contains("1080"))
                 {
-                    wolfmaxCat = Wolfmax4KCatType.Serie1080;
+                    siteCat = WolfTorrentCatType.Serie1080;
                 }
                 else if (quality.ToLower().Contains("4k") || quality.ToLower().Contains("2160p"))
                 {
-                    wolfmaxCat = Wolfmax4KCatType.Serie4K;
+                    siteCat = WolfTorrentCatType.Serie4K;
                 }
                 else
                 {
-                    wolfmaxCat = Wolfmax4KCatType.Serie;
+                    siteCat = WolfTorrentCatType.Serie;
                 }
             }
             else
             {
                 if (quality.Contains("720"))
                 {
-                    wolfmaxCat = Wolfmax4KCatType.Pelicula720;
+                    siteCat = WolfTorrentCatType.Pelicula720;
                 }
                 else if (quality.Contains("1080"))
                 {
-                    wolfmaxCat = Wolfmax4KCatType.Pelicula1080;
+                    siteCat = WolfTorrentCatType.Pelicula1080;
                 }
                 else if (quality.ToLower().Contains("4k") || quality.ToLower().Contains("2160p"))
                 {
-                    wolfmaxCat = Wolfmax4KCatType.Pelicula4K;
+                    siteCat = WolfTorrentCatType.Pelicula4K;
                 }
                 else
                 {
-                    wolfmaxCat = Wolfmax4KCatType.Pelicula;
+                    siteCat = WolfTorrentCatType.Pelicula;
                 }
             }
 
-            return wolfmaxCat;
+            return siteCat;
         }
 
         private string ParseQuality(string quality)
@@ -746,7 +773,7 @@ namespace Jackett.Common.Indexers.Definitions
         }
     }
 
-    internal static class Wolfmax4KCatType
+    internal static class WolfTorrentCatType
     {
         public static string Pelicula => "pelicula";
         public static string Pelicula720 => "pelicula720";
@@ -758,7 +785,7 @@ namespace Jackett.Common.Indexers.Definitions
         public static string Serie4K => "serie4k";
     }
 
-    internal sealed record Wolfmax4KItem
+    internal sealed record WolfTorrentItem
     {
         public string Title { get; set; }
         public string DetailsPath { get; set; }
