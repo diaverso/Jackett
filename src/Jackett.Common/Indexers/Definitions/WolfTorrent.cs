@@ -243,8 +243,10 @@ namespace Jackett.Common.Indexers.Definitions
             if (pow != null)
                 return await DownloadViaProofOfWorkAsync(generate, pow);
 
+            // the provider depends on the visitor's IP (hcaptcha for flagged ones, e.g. some VPNs), and
+            // FlareSolverr's browser gets its own from the gateway page, so let it handle any of them
             var verification = generate["verification"];
-            if (verification != null && verification.Value<string>("provider") == "turnstile")
+            if (verification != null)
                 return await DownloadViaTurnstileAsync(tabla, code);
 
             throw new Exception("Error, the site's download verification method is not recognized.");
