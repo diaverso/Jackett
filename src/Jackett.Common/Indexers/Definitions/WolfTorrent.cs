@@ -72,6 +72,8 @@ namespace Jackett.Common.Indexers.Definitions
                    configData: new ConfigurationData())
         {
             configData.AddDynamic("flaresolverr", new DisplayInfoConfigurationItem("FlareSolverr", "This site may use Cloudflare DDoS Protection, therefore Jackett requires <a href=\"https://github.com/Jackett/Jackett#configuring-flaresolverr\" target=\"_blank\">FlareSolverr</a> to access it."));
+            configData.AddDynamic("flaresolverrAlt", new StringConfigurationItem("Alternative FlareSolverr URL (optional, with a different public IP)"));
+            configData.AddDynamic("flaresolverrAltInfo", new DisplayInfoConfigurationItem("Alternative FlareSolverr", "The site picks the download verification by the visitor's IP (Turnstile, or hCaptcha for flagged IPs) and changes it over time. A second FlareSolverr behind another public IP is tried when the main one can't get the link."));
             webclient.requestDelay = 0.5;
             // the site's /buscar search endpoint silently returns an empty result page
             // when it sees the default "Jackett/x.x.x" User-Agent; it needs a browser-like one
@@ -247,7 +249,7 @@ namespace Jackett.Common.Indexers.Definitions
             // FlareSolverr's browser gets its own from the gateway page, so let it handle any of them
             var verification = generate["verification"];
             if (verification != null)
-                return await DownloadViaTurnstileAsync(tabla, code);
+                return await DownloadViaTurnstileAsync(tabla, code, verification.Value<string>("provider"));
 
             throw new Exception("Error, the site's download verification method is not recognized.");
         }
@@ -299,10 +301,11 @@ namespace Jackett.Common.Indexers.Definitions
         // related PRs) - the stock FlareSolverr/ClearanceHandler integration doesn't apply
         // here because it only triggers on Cloudflare's own challenge pages, not this site's
         // own 200 OK JSON "verification" response.
-        private async Task<byte[]> DownloadViaTurnstileAsync(string tabla, string code)
+        private async Task<byte[]> DownloadViaTurnstileAsync(string tabla, string code, string provider)
         {
-            var flareSolverrUrl = webclient.FlareSolverrUrl;
-            if (flareSolverrUrl.IsNullOrWhiteSpace())
+            var mainUrl = webclient.FlareSolverrUrl;
+            var altUrl = ((StringConfigurationItem)configData.GetDynamic("flaresolverrAlt")).Value;
+            if (mainUrl.IsNullOrWhiteSpace() && altUrl.IsNullOrWhiteSpace())
                 throw new Exception("Error, this site now requires solving a Cloudflare Turnstile challenge to " +
                                      "download. Configure FlareSolverr (with Turnstile click support) in Jackett's server settings.");
 
@@ -314,6 +317,31 @@ namespace Jackett.Common.Indexers.Definitions
             };
             var gatewayUrl = new Uri(new Uri(SiteLink), $"descarga/{gatewaySegment}/{code}").AbsoluteUri;
 
+            // the main FlareSolverr is assumed to share Jackett's public IP, which the site just gave
+            // `provider` to: if that isn't Turnstile, the alternative one (another IP) has better odds
+            var flareSolverrUrls = new List<string> { mainUrl, altUrl }.Where(u => u.IsNotNullOrWhiteSpace()).Distinct().ToList();
+            if (provider != "turnstile")
+                flareSolverrUrls.Reverse();
+
+            var errors = new List<string>();
+            foreach (var flareSolverrUrl in flareSolverrUrls)
+            {
+                try
+                {
+                    return await DownloadViaFlareSolverrAsync(flareSolverrUrl, gatewayUrl);
+                }
+                catch (Exception e)
+                {
+                    logger.Debug($"WolfTorrent: download through FlareSolverr {flareSolverrUrl} failed: {e.Message}");
+                    errors.Add($"{flareSolverrUrl}: {e.Message}");
+                }
+            }
+
+            throw new Exception("Error, no FlareSolverr could get the download link. " + string.Join(" | ", errors));
+        }
+
+        private async Task<byte[]> DownloadViaFlareSolverrAsync(string flareSolverrUrl, string gatewayUrl)
+        {
             var apiUrl = flareSolverrUrl.TrimEnd('/');
             if (!apiUrl.EndsWith("/v1"))
                 apiUrl += "/v1";
@@ -342,6 +370,8 @@ namespace Jackett.Common.Indexers.Definitions
             var finalUrl = solution?.Value<string>("url");
             if (finalUrl.IsNullOrWhiteSpace())
                 throw new Exception("Error, FlareSolverr did not return a resulting URL after solving the Turnstile challenge.");
+            if (finalUrl.TrimEnd('/') == gatewayUrl.TrimEnd('/'))
+                throw new Exception("Error, the download verification did not pass (still on the gateway page).");
 
             var cookieHeader = string.Join("; ", (solution["cookies"] as JArray ?? new JArray())
                                                   .Select(c => $"{c.Value<string>("name")}={c.Value<string>("value")}"));
